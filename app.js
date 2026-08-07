@@ -2,7 +2,9 @@
    TrackCare - Track Maintenance System
    Lógica de la PWA: offline-first (IndexedDB), cámara,
    checklist de inspección visual y predictiva, WhatsApp/email,
-   sincronización al recuperar conexión.
+   sincronización al recuperar conexión, acceso por contraseña
+   y captura obligatoria de inspector/celular con memoria de
+   números previos.
    ========================================================= */
 
 // ---------- Service Worker ----------
@@ -17,7 +19,7 @@ if ("serviceWorker" in navigator) {
 
 // ---------- IndexedDB helper ----------
 const DB_NAME = "trackcare_db";
-const DB_VERSION = 1;
+const DB_VERSION = 2; // v2: agrega store "phonebook" para recordar celulares de inspectores
 let db;
 
 function openDB() {
@@ -31,6 +33,9 @@ function openDB() {
       }
       if (!_db.objectStoreNames.contains("settings")) {
         _db.createObjectStore("settings", { keyPath: "key" });
+      }
+      if (!_db.objectStoreNames.contains("phonebook")) {
+        _db.createObjectStore("phonebook", { keyPath: "phone" });
       }
     };
     req.onsuccess = (e) => { db = e.target.result; resolve(db); };
@@ -164,6 +169,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   loadSettingsIntoForm();
   refreshConnectionStatus();
   renderHistory();
+  await initAuth();          // pantalla de acceso por contraseña
+  await loadPhoneSuggestions(); // datalist de celulares recordados
+  bindValidation();
   window.addEventListener("online", () => { refreshConnectionStatus(); syncAll(); });
   window.addEventListener("offline", refreshConnectionStatus);
 });
@@ -177,6 +185,7 @@ function bindTabs() {
       btn.classList.add("active");
       document.getElementById(btn.dataset.tab).classList.add("active");
       if (btn.dataset.tab === "tab-history") renderHistory();
+      if (btn.dataset.tab === "tab-settings") renderAdminPanel();
     });
   });
 }
@@ -310,6 +319,12 @@ function bindActions() {
   document.getElementById("modalOverlay").addEventListener("click", (e) => {
     if (e.target.id === "modalOverlay") closeModal();
   });
+
+  // ---- Seguridad: bloqueo de sesión de app ----
+  document.getElementById("btnLock").addEventListener("click", lockApp);
+
+  // ---- Panel de Administrador (contraseña + borrar datos) ----
+  bindAdminPanel();
 }
 
 function autoFillSummary() {
@@ -338,11 +353,74 @@ function autoFillSummary() {
   showToast("Resumen generado automáticamente ✔");
 }
 
+// ---------- Validación de campos obligatorios (Inspector y Celular) ----------
+function bindValidation() {
+  const inspector = document.getElementById("woInspector");
+  const celular = document.getElementById("woCelular");
+  inspector.addEventListener("input", () => validateInspectorField());
+  celular.addEventListener("input", () => {
+    // Solo dígitos, +, espacios y guiones mientras escribe
+    celular.value = celular.value.replace(/[^\d+\-\s]/g, "");
+    validateCelularField();
+  });
+}
+
+function validateInspectorField() {
+  const inspector = document.getElementById("woInspector");
+  const err = document.getElementById("errInspector");
+  const ok = inspector.value.trim().length >= 3;
+  inspector.classList.toggle("field-error", !ok);
+  err.classList.toggle("show", !ok);
+  return ok;
+}
+
+function normalizeDigits(v) {
+  return (v || "").replace(/\D/g, "");
+}
+
+function validateCelularField() {
+  const celular = document.getElementById("woCelular");
+  const err = document.getElementById("errCelular");
+  const digits = normalizeDigits(celular.value);
+  const ok = digits.length >= 10;
+  celular.classList.toggle("field-error", !ok);
+  err.classList.toggle("show", !ok);
+  return ok;
+}
+
+// ---------- Memoria de celulares (datalist para futuros reportes) ----------
+async function loadPhoneSuggestions() {
+  const all = await dbGetAll("phonebook");
+  all.sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
+  const datalist = document.getElementById("celularSugerencias");
+  datalist.innerHTML = all.map(p => `<option value="${p.phone}">${p.name ? "Insp: " + p.name : ""}</option>`).join("");
+}
+
+async function rememberPhone(phoneRaw, inspectorName) {
+  const digits = normalizeDigits(phoneRaw);
+  if (digits.length < 10) return;
+  await dbPut("phonebook", { phone: phoneRaw.trim(), name: inspectorName || "", lastUsed: Date.now() });
+  await loadPhoneSuggestions();
+}
+
 // ---------- Save report ----------
 async function saveReport() {
   const ubicacion = document.getElementById("fUbicacion").value.trim();
   const tipoHerraje = document.getElementById("fTipoHerraje").value;
   const estado = document.getElementById("fEstado").value;
+  const inspector = document.getElementById("woInspector").value.trim();
+  const celular = document.getElementById("woCelular").value.trim();
+
+  // Validación obligatoria: inspector y celular (con lista desplegable de recordados)
+  const inspectorOk = validateInspectorField();
+  const celularOk = validateCelularField();
+
+  if (!inspectorOk || !celularOk) {
+    showToast("⚠️ Capture el nombre del inspector y un celular válido (10 dígitos) antes de guardar");
+    if (!inspectorOk) document.getElementById("woInspector").focus();
+    else document.getElementById("woCelular").focus();
+    return;
+  }
 
   if (!ubicacion || !tipoHerraje || !estado) {
     showToast("⚠️ Complete Ubicación, Tipo de herraje y Estado antes de guardar");
@@ -363,7 +441,8 @@ async function saveReport() {
     id: editingId || `RPT-${Date.now()}`,
     woNumber: document.getElementById("woNumber").value,
     dateTime: document.getElementById("woDateTime").value,
-    inspector: document.getElementById("woInspector").value,
+    inspector,
+    celular,
     shift: document.getElementById("woShift").value,
     ubicacion, area: document.getElementById("fArea").value,
     tipoHerraje, activoId: document.getElementById("fActivoId").value,
@@ -386,6 +465,7 @@ async function saveReport() {
   };
 
   await dbPut("reports", report);
+  await rememberPhone(celular, inspector); // guarda el celular para sugerirlo en futuros reportes
   showToast("✅ Reporte guardado localmente" + (navigator.onLine ? "" : " (sin conexión)"));
   resetForm();
   renderHistory();
@@ -416,6 +496,10 @@ function resetForm() {
     updateCatCount(cat.key);
   });
   editingId = null;
+  // El inspector y celular NO se limpian (se conservan para el siguiente reporte del mismo turno);
+  // solo se re-validan visualmente.
+  validateInspectorField();
+  validateCelularField();
 }
 
 // ---------- History ----------
@@ -443,7 +527,7 @@ async function renderHistory() {
     <div class="history-item">
       <div class="hi-main">
         <h4>${r.activoId || r.tipoHerraje || "Elemento"} — ${r.ubicacion}</h4>
-        <p>${r.woNumber} · ${r.dateTime} · Insp: ${r.inspector || "—"}</p>
+        <p>${r.woNumber} · ${r.dateTime} · Insp: ${r.inspector || "—"} · Cel: ${r.celular || "—"}</p>
         <span class="badge-status badge-${(r.estado||"").split(" ")[0]}">${r.estado}</span>
         <span class="badge-status ${r.synced ? "badge-sync-done" : "badge-sync-pending"}">${r.synced ? "Sincronizado" : "Pendiente"}</span>
       </div>
@@ -473,6 +557,7 @@ async function viewReport(id) {
     <p><b>Ubicación:</b> ${r.ubicacion} | <b>Área:</b> ${r.area || "—"}</p>
     <p><b>Activo:</b> ${r.activoId || "—"} | <b>GPS:</b> ${r.gps || "—"}</p>
     <p><b>Estado:</b> ${r.estado} | <b>Inspector:</b> ${r.inspector || "—"} (${r.shift || ""})</p>
+    <p><b>Celular de quien reporta:</b> ${r.celular || "—"}</p>
     <p><b>Información específica:</b> ${r.infoEspecifica || "—"}</p>
     ${["foto1","foto2","foto3"].map(k => r.photos[k] && r.photos[k].data ? `<img src="${r.photos[k].data}"><p><i>${r.photos[k].comment||""}</i></p>` : "").join("")}
     <p><b>Resumen:</b><br>${(r.resumen||"").replace(/\n/g,"<br>")}</p>
@@ -491,6 +576,7 @@ function buildReportText(r) {
     `Orden: ${r.woNumber}\n` +
     `Fecha: ${r.dateTime}\n` +
     `Inspector: ${r.inspector || "—"} (${r.shift || ""})\n` +
+    `Celular de quien reporta: ${r.celular || "—"}\n` +
     `Ubicación: ${r.ubicacion} | Área: ${r.area || "—"}\n` +
     `Elemento: ${r.tipoHerraje} (${r.activoId || "—"})\n` +
     `GPS: ${r.gps || "—"}\n` +
@@ -520,7 +606,7 @@ async function shareWhatsApp(id) {
       }
     } catch (e) { /* fallback below */ }
   }
-  // Fallback: WhatsApp deep link with text only (photos deben adjuntarse manualmente)
+  // Fallback: WhatsApp deep link con texto (photos deben adjuntarse manualmente)
   const settings = await dbGet("settings", "app");
   const phone = settings?.whatsapp ? settings.whatsapp.replace(/\D/g,"") : "";
   const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
@@ -558,6 +644,7 @@ async function saveSettings() {
   };
   await dbPut("settings", settings);
   document.getElementById("woInspector").value = settings.inspector;
+  validateInspectorField();
   showToast("Configuración guardada ✔");
 }
 
@@ -587,6 +674,7 @@ async function importBackup(e) {
   }
 }
 async function wipeData() {
+  if (!isAdminUnlocked()) { showToast("Solo un administrador puede borrar todos los datos. Desbloquee el panel primero."); return; }
   if (!confirm("Esto eliminará TODOS los reportes locales. ¿Continuar?")) return;
   const all = await dbGetAll("reports");
   for (const r of all) await dbDelete("reports", r.id);
@@ -645,4 +733,239 @@ function showToast(msg) {
   t.classList.remove("hidden");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.add("hidden"), 3200);
+}
+
+/* =========================================================
+   ============ ACCESO POR CONTRASEÑA (AUTENTICACIÓN) ========
+   =========================================================
+   Nota de seguridad: esta es una protección de acceso básica
+   pensada para uso en campo (evitar que cualquier persona abra
+   la app en el dispositivo compartido). La contraseña se guarda
+   con hash SHA-256 en IndexedDB local; no sustituye un sistema
+   de autenticación de servidor/Azure AD para datos críticos.
+   ========================================================= */
+
+async function sha256(text) {
+  const enc = new TextEncoder().encode(text);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", enc);
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function getAuthSettings() {
+  return await dbGet("settings", "auth");
+}
+
+async function initAuth() {
+  const overlay = document.getElementById("loginOverlay");
+  const auth = await getAuthSettings();
+
+  bindTogglePasswordButtons();
+  document.getElementById("formLogin").addEventListener("submit", handleLoginSubmit);
+  document.getElementById("formSetupPassword").addEventListener("submit", handleSetupSubmit);
+
+  if (!auth || !auth.passwordHash) {
+    // Primera vez: se debe crear una contraseña antes de usar la app
+    document.getElementById("loginTitle").textContent = "Configurar acceso";
+    document.getElementById("loginSubtitle").textContent = "Es la primera vez que se usa esta app en este dispositivo. Cree una contraseña de acceso.";
+    document.getElementById("formLogin").style.display = "none";
+    document.getElementById("formSetupPassword").style.display = "block";
+    overlay.classList.remove("hidden");
+    return;
+  }
+
+  if (sessionStorage.getItem("tc_unlocked") === "1") {
+    overlay.classList.add("hidden");
+  } else {
+    document.getElementById("loginTitle").textContent = "Acceso protegido";
+    document.getElementById("loginSubtitle").textContent = "Ingrese la contraseña de la aplicación para continuar.";
+    document.getElementById("formLogin").style.display = "block";
+    document.getElementById("formSetupPassword").style.display = "none";
+    overlay.classList.remove("hidden");
+  }
+}
+
+async function handleLoginSubmit(e) {
+  e.preventDefault();
+  const pass = document.getElementById("loginPassword").value;
+  const err = document.getElementById("loginError");
+  const auth = await getAuthSettings();
+  const hash = await sha256(pass);
+  if (auth && hash === auth.passwordHash) {
+    err.classList.remove("show");
+    sessionStorage.setItem("tc_unlocked", "1");
+    document.getElementById("loginOverlay").classList.add("hidden");
+    document.getElementById("loginPassword").value = "";
+  } else {
+    err.classList.add("show");
+  }
+}
+
+async function handleSetupSubmit(e) {
+  e.preventDefault();
+  const p1 = document.getElementById("setupPassword1").value;
+  const p2 = document.getElementById("setupPassword2").value;
+  const err = document.getElementById("setupError");
+  if (p1.length < 4 || p1 !== p2) {
+    err.classList.add("show");
+    return;
+  }
+  err.classList.remove("show");
+  const hash = await sha256(p1);
+  await dbPut("settings", { key: "auth", passwordHash: hash });
+  sessionStorage.setItem("tc_unlocked", "1");
+  document.getElementById("loginOverlay").classList.add("hidden");
+  document.getElementById("setupPassword1").value = "";
+  document.getElementById("setupPassword2").value = "";
+  showToast("Contraseña creada correctamente ✔");
+}
+
+function lockApp() {
+  sessionStorage.removeItem("tc_unlocked");
+  document.getElementById("loginTitle").textContent = "Acceso protegido";
+  document.getElementById("loginSubtitle").textContent = "Ingrese la contraseña de la aplicación para continuar.";
+  document.getElementById("formLogin").style.display = "block";
+  document.getElementById("formSetupPassword").style.display = "none";
+  document.getElementById("loginOverlay").classList.remove("hidden");
+}
+
+function bindTogglePasswordButtons() {
+  document.querySelectorAll(".toggle-pass").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const input = document.getElementById(btn.dataset.target);
+      input.type = input.type === "password" ? "text" : "password";
+    });
+  });
+}
+
+/* =========================================================
+   ============ ROL DE ADMINISTRADOR (GATING) =================
+   =========================================================
+   Solo un usuario que verifique la contraseña de administrador
+   puede: (a) restablecer/cambiar la contraseña de acceso de la
+   app, (b) cambiar la propia contraseña de administrador, y
+   (c) borrar todos los datos locales. El desbloqueo del panel
+   dura únicamente la sesión actual del navegador (sessionStorage)
+   y puede cerrarse manualmente con "Cerrar panel de administrador".
+   ========================================================= */
+
+function isAdminUnlocked() {
+  return sessionStorage.getItem("tc_admin_unlocked") === "1";
+}
+
+function bindAdminPanel() {
+  document.getElementById("btnAdminSetupCreate").addEventListener("click", handleAdminSetupCreate);
+  document.getElementById("btnAdminUnlock").addEventListener("click", handleAdminUnlock);
+  document.getElementById("btnAdminLock").addEventListener("click", handleAdminLock);
+  document.getElementById("btnAdminResetAccess").addEventListener("click", handleAdminResetAccess);
+  document.getElementById("btnAdminChangePassword").addEventListener("click", handleAdminChangePassword);
+  // Enter key support en el campo de desbloqueo
+  document.getElementById("adminUnlockPass").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") handleAdminUnlock();
+  });
+  renderAdminPanel();
+}
+
+async function renderAdminPanel() {
+  const auth = await getAuthSettings();
+  const setupView = document.getElementById("adminSetupView");
+  const lockedView = document.getElementById("adminLockedView");
+  const unlockedView = document.getElementById("adminUnlockedView");
+
+  setupView.style.display = "none";
+  lockedView.style.display = "none";
+  unlockedView.style.display = "none";
+
+  if (!auth || !auth.adminPasswordHash) {
+    // Nunca se ha configurado una contraseña de administrador: se debe crear primero
+    setupView.style.display = "block";
+    return;
+  }
+
+  if (isAdminUnlocked()) {
+    unlockedView.style.display = "block";
+  } else {
+    lockedView.style.display = "block";
+  }
+}
+
+async function handleAdminSetupCreate() {
+  const p1 = document.getElementById("adminSetupPass1").value;
+  const p2 = document.getElementById("adminSetupPass2").value;
+  const err = document.getElementById("errAdminSetup");
+  if (p1.length < 4 || p1 !== p2) {
+    err.classList.add("show");
+    return;
+  }
+  err.classList.remove("show");
+  const auth = (await getAuthSettings()) || { key: "auth" };
+  auth.adminPasswordHash = await sha256(p1);
+  await dbPut("settings", auth);
+  sessionStorage.setItem("tc_admin_unlocked", "1");
+  document.getElementById("adminSetupPass1").value = "";
+  document.getElementById("adminSetupPass2").value = "";
+  showToast("Contraseña de administrador creada. Panel desbloqueado ✔");
+  renderAdminPanel();
+}
+
+async function handleAdminUnlock() {
+  const pass = document.getElementById("adminUnlockPass").value;
+  const err = document.getElementById("errAdminUnlock");
+  const auth = await getAuthSettings();
+  const hash = await sha256(pass);
+  if (!auth || hash !== auth.adminPasswordHash) {
+    err.classList.add("show");
+    return;
+  }
+  err.classList.remove("show");
+  sessionStorage.setItem("tc_admin_unlocked", "1");
+  document.getElementById("adminUnlockPass").value = "";
+  showToast("Panel de administrador desbloqueado ✔");
+  renderAdminPanel();
+}
+
+function handleAdminLock() {
+  sessionStorage.removeItem("tc_admin_unlocked");
+  showToast("Panel de administrador bloqueado");
+  renderAdminPanel();
+}
+
+async function handleAdminResetAccess() {
+  if (!isAdminUnlocked()) { showToast("Desbloquee el panel de administrador primero"); return; }
+  const p1 = document.getElementById("adminNewAccessPass1").value;
+  const p2 = document.getElementById("adminNewAccessPass2").value;
+  const err = document.getElementById("errAdminResetAccess");
+  if (p1.length < 4 || p1 !== p2) {
+    err.classList.add("show");
+    return;
+  }
+  err.classList.remove("show");
+  const auth = (await getAuthSettings()) || { key: "auth" };
+  auth.passwordHash = await sha256(p1);
+  await dbPut("settings", auth);
+  document.getElementById("adminNewAccessPass1").value = "";
+  document.getElementById("adminNewAccessPass2").value = "";
+  showToast("Contraseña de acceso restablecida correctamente ✔");
+}
+
+async function handleAdminChangePassword() {
+  if (!isAdminUnlocked()) { showToast("Desbloquee el panel de administrador primero"); return; }
+  const current = document.getElementById("adminChangeCurrent").value;
+  const next1 = document.getElementById("adminChangeNew1").value;
+  const next2 = document.getElementById("adminChangeNew2").value;
+  const err = document.getElementById("errAdminChange");
+
+  const auth = await getAuthSettings();
+  const currentHash = await sha256(current);
+
+  if (!auth || currentHash !== auth.adminPasswordHash || next1.length < 4 || next1 !== next2) {
+    err.classList.add("show");
+    return;
+  }
+  err.classList.remove("show");
+  auth.adminPasswordHash = await sha256(next1);
+  await dbPut("settings", auth);
+  document.getElementById("adminChangeCurrent").value = "";
+  document.getElementById("adminChangeNew1").value = "";
+  document.getElementById("adminChangeNew2").value = "";
+  showToast("Contraseña de administrador actualizada ✔");
 }
