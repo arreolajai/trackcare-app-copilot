@@ -19,7 +19,7 @@ if ("serviceWorker" in navigator) {
 
 // ---------- IndexedDB helper ----------
 const DB_NAME = "trackcare_db";
-const DB_VERSION = 2; // v2: agrega store "phonebook" para recordar celulares de inspectores
+const DB_VERSION = 3; // v3: agrega store "users" para cuentas individuales (nombre de usuario + contraseña)
 let db;
 
 function openDB() {
@@ -36,6 +36,10 @@ function openDB() {
       }
       if (!_db.objectStoreNames.contains("phonebook")) {
         _db.createObjectStore("phonebook", { keyPath: "phone" });
+      }
+      if (!_db.objectStoreNames.contains("users")) {
+        // keyPath normalizado en minúsculas para evitar duplicados por mayúsculas/minúsculas
+        _db.createObjectStore("users", { keyPath: "usernameLower" });
       }
     };
     req.onsuccess = (e) => { db = e.target.result; resolve(db); };
@@ -755,76 +759,266 @@ async function getAuthSettings() {
   return await dbGet("settings", "auth");
 }
 
+/* ---------------------------------------------------------
+   Sistema de cuentas de usuario (multi-usuario por dispositivo)
+   Cada usuario tiene: usernameLower (clave), username (visible),
+   passwordHash, createdAt. Se guardan en el store "users".
+--------------------------------------------------------- */
+
+function normalizeUsername(u) {
+  return (u || "").trim().toLowerCase();
+}
+
+const SECURITY_QUESTIONS = {
+  mascota: "¿Cuál fue el nombre de su primera mascota?",
+  ciudad: "¿En qué ciudad nació?",
+  madre: "¿Cuál es el nombre de soltera de su madre?",
+  escuela: "¿Cuál fue el nombre de su escuela primaria?",
+  auto: "¿Cuál fue la marca de su primer auto?"
+};
+
+// Usuario en proceso de recuperación de contraseña (se guarda entre paso 1 y paso 2)
+let forgotPasswordUser = null;
+
 async function initAuth() {
   const overlay = document.getElementById("loginOverlay");
-  const auth = await getAuthSettings();
 
   bindTogglePasswordButtons();
-  document.getElementById("formLogin").addEventListener("submit", handleLoginSubmit);
-  document.getElementById("formSetupPassword").addEventListener("submit", handleSetupSubmit);
+  document.getElementById("btnGoNewUser").addEventListener("click", () => showLoginView("new"));
+  document.getElementById("btnGoExistingUser").addEventListener("click", () => showLoginView("existing"));
+  document.getElementById("btnBackFromNew").addEventListener("click", () => showLoginView("choice"));
+  document.getElementById("btnBackFromExisting").addEventListener("click", () => showLoginView("choice"));
+  document.getElementById("btnGoForgotPassword").addEventListener("click", () => showLoginView("forgot1"));
+  document.getElementById("btnBackFromForgot1").addEventListener("click", () => showLoginView("existing"));
+  document.getElementById("btnBackFromForgot2").addEventListener("click", () => showLoginView("existing"));
+  document.getElementById("formNewUser").addEventListener("submit", handleNewUserSubmit);
+  document.getElementById("formExistingUser").addEventListener("submit", handleExistingUserSubmit);
+  document.getElementById("formForgotStep1").addEventListener("submit", handleForgotStep1Submit);
+  document.getElementById("formForgotStep2").addEventListener("submit", handleForgotStep2Submit);
 
-  if (!auth || !auth.passwordHash) {
-    // Primera vez: se debe crear una contraseña antes de usar la app
-    document.getElementById("loginTitle").textContent = "Configurar acceso";
-    document.getElementById("loginSubtitle").textContent = "Es la primera vez que se usa esta app en este dispositivo. Cree una contraseña de acceso.";
-    document.getElementById("formLogin").style.display = "none";
-    document.getElementById("formSetupPassword").style.display = "block";
-    overlay.classList.remove("hidden");
-    return;
-  }
-
-  if (sessionStorage.getItem("tc_unlocked") === "1") {
+  const currentUser = sessionStorage.getItem("tc_current_user");
+  if (currentUser) {
     overlay.classList.add("hidden");
+    showCurrentUserLabel(currentUser);
   } else {
-    document.getElementById("loginTitle").textContent = "Acceso protegido";
-    document.getElementById("loginSubtitle").textContent = "Ingrese la contraseña de la aplicación para continuar.";
-    document.getElementById("formLogin").style.display = "block";
-    document.getElementById("formSetupPassword").style.display = "none";
+    showLoginView("choice");
     overlay.classList.remove("hidden");
   }
 }
 
-async function handleLoginSubmit(e) {
-  e.preventDefault();
-  const pass = document.getElementById("loginPassword").value;
-  const err = document.getElementById("loginError");
-  const auth = await getAuthSettings();
-  const hash = await sha256(pass);
-  if (auth && hash === auth.passwordHash) {
-    err.classList.remove("show");
-    sessionStorage.setItem("tc_unlocked", "1");
-    document.getElementById("loginOverlay").classList.add("hidden");
-    document.getElementById("loginPassword").value = "";
+// Controla cuál de las vistas del login se muestra: choice | new | existing | forgot1 | forgot2
+function showLoginView(view) {
+  const choiceView = document.getElementById("loginChoiceView");
+  const newForm = document.getElementById("formNewUser");
+  const existingForm = document.getElementById("formExistingUser");
+  const forgot1Form = document.getElementById("formForgotStep1");
+  const forgot2Form = document.getElementById("formForgotStep2");
+  const title = document.getElementById("loginTitle");
+  const subtitle = document.getElementById("loginSubtitle");
+
+  choiceView.style.display = "none";
+  newForm.style.display = "none";
+  existingForm.style.display = "none";
+  forgot1Form.style.display = "none";
+  forgot2Form.style.display = "none";
+
+  if (view === "new") {
+    newForm.style.display = "block";
+    title.textContent = "Crear nueva cuenta";
+    subtitle.textContent = "Capture su nombre de usuario y una contraseña para darse de alta en este dispositivo.";
+  } else if (view === "existing") {
+    existingForm.style.display = "block";
+    title.textContent = "Iniciar sesión";
+    subtitle.textContent = "Ingrese su nombre de usuario y contraseña ya registrados.";
+  } else if (view === "forgot1") {
+    forgot1Form.style.display = "block";
+    title.textContent = "Recuperar contraseña";
+    subtitle.textContent = "Ingrese su nombre de usuario para continuar.";
+    document.getElementById("forgotStep1Error").classList.remove("show");
+  } else if (view === "forgot2") {
+    forgot2Form.style.display = "block";
+    title.textContent = "Recuperar contraseña";
+    subtitle.textContent = "Responda su pregunta de seguridad y capture una nueva contraseña.";
+    document.getElementById("forgotStep2Error").classList.remove("show");
   } else {
-    err.classList.add("show");
+    choiceView.style.display = "block";
+    title.textContent = "Bienvenido a TrackCare";
+    subtitle.textContent = "Seleccione una opción para continuar.";
   }
 }
 
-async function handleSetupSubmit(e) {
+async function handleNewUserSubmit(e) {
   e.preventDefault();
-  const p1 = document.getElementById("setupPassword1").value;
-  const p2 = document.getElementById("setupPassword2").value;
-  const err = document.getElementById("setupError");
-  if (p1.length < 4 || p1 !== p2) {
+  const usernameRaw = document.getElementById("newUsername").value;
+  const usernameLower = normalizeUsername(usernameRaw);
+  const p1 = document.getElementById("newUserPass1").value;
+  const p2 = document.getElementById("newUserPass2").value;
+  const secQuestion = document.getElementById("newUserSecQuestion").value;
+  const secAnswer = document.getElementById("newUserSecAnswer").value.trim();
+  const err = document.getElementById("newUserError");
+
+  if (!usernameLower) {
+    err.textContent = "Ingrese un nombre de usuario.";
     err.classList.add("show");
     return;
   }
+  if (p1.length < 4 || p1 !== p2) {
+    err.textContent = "Verifique que las contraseñas coincidan (mín. 4 caracteres).";
+    err.classList.add("show");
+    return;
+  }
+  if (!secQuestion || !secAnswer) {
+    err.textContent = "Seleccione una pregunta de seguridad y capture una respuesta (necesaria para recuperar su contraseña).";
+    err.classList.add("show");
+    return;
+  }
+
+  const existing = await dbGet("users", usernameLower);
+  if (existing) {
+    err.textContent = "Ese nombre de usuario ya existe. Use 'Usuario dado de alta' para entrar.";
+    err.classList.add("show");
+    return;
+  }
+
   err.classList.remove("show");
-  const hash = await sha256(p1);
-  await dbPut("settings", { key: "auth", passwordHash: hash });
-  sessionStorage.setItem("tc_unlocked", "1");
+  const passwordHash = await sha256(p1);
+  // La respuesta de seguridad se normaliza (minúsculas, sin espacios extremos) antes de hashear,
+  // para que "Firulais" y "firulais " se reconozcan igual al recuperar la contraseña.
+  const secAnswerHash = await sha256(normalizeUsername(secAnswer));
+  await dbPut("users", {
+    usernameLower,
+    username: usernameRaw.trim(),
+    passwordHash,
+    securityQuestion: secQuestion,
+    securityAnswerHash: secAnswerHash,
+    createdAt: new Date().toISOString()
+  });
+
+  loginSuccess(usernameRaw.trim());
+  document.getElementById("newUsername").value = "";
+  document.getElementById("newUserPass1").value = "";
+  document.getElementById("newUserPass2").value = "";
+  document.getElementById("newUserSecQuestion").value = "";
+  document.getElementById("newUserSecAnswer").value = "";
+  showToast(`Cuenta creada correctamente. ¡Bienvenido, ${usernameRaw.trim()}! ✔`);
+}
+
+/* ---------------------------------------------------------
+   Recuperar / restablecer contraseña con pregunta de seguridad
+   Paso 1: usuario captura su nombre de usuario -> se busca la cuenta
+   Paso 2: se muestra su pregunta de seguridad; si la respuesta
+           coincide (hash), se permite capturar una nueva contraseña.
+--------------------------------------------------------- */
+
+async function handleForgotStep1Submit(e) {
+  e.preventDefault();
+  const usernameRaw = document.getElementById("forgotUsername").value;
+  const usernameLower = normalizeUsername(usernameRaw);
+  const err = document.getElementById("forgotStep1Error");
+
+  const user = await dbGet("users", usernameLower);
+  if (!user || !user.securityQuestion) {
+    err.textContent = "Usuario no encontrado o sin pregunta de seguridad configurada. Contacte a un administrador.";
+    err.classList.add("show");
+    return;
+  }
+
+  err.classList.remove("show");
+  forgotPasswordUser = user;
+  document.getElementById("forgotQuestionLabel").textContent = SECURITY_QUESTIONS[user.securityQuestion] || "Pregunta de seguridad";
+  document.getElementById("forgotUsername").value = "";
+  showLoginView("forgot2");
+}
+
+async function handleForgotStep2Submit(e) {
+  e.preventDefault();
+  const err = document.getElementById("forgotStep2Error");
+
+  if (!forgotPasswordUser) {
+    err.textContent = "Ocurrió un error. Vuelva a intentar desde 'Olvidó su contraseña'.";
+    err.classList.add("show");
+    showLoginView("existing");
+    return;
+  }
+
+  const answer = document.getElementById("forgotAnswer").value.trim();
+  const p1 = document.getElementById("forgotNewPass1").value;
+  const p2 = document.getElementById("forgotNewPass2").value;
+
+  const answerHash = await sha256(normalizeUsername(answer));
+  if (answerHash !== forgotPasswordUser.securityAnswerHash) {
+    err.textContent = "La respuesta de seguridad no es correcta.";
+    err.classList.add("show");
+    return;
+  }
+  if (p1.length < 4 || p1 !== p2) {
+    err.textContent = "Verifique que la nueva contraseña tenga mínimo 4 caracteres y coincida en ambos campos.";
+    err.classList.add("show");
+    return;
+  }
+
+  err.classList.remove("show");
+  forgotPasswordUser.passwordHash = await sha256(p1);
+  await dbPut("users", forgotPasswordUser);
+  showToast(`Contraseña restablecida correctamente para ${forgotPasswordUser.username}. Ya puede iniciar sesión ✔`);
+
+  const restoredUsername = forgotPasswordUser.username;
+  forgotPasswordUser = null;
+  document.getElementById("forgotAnswer").value = "";
+  document.getElementById("forgotNewPass1").value = "";
+  document.getElementById("forgotNewPass2").value = "";
+  document.getElementById("existingUsername").value = restoredUsername;
+  showLoginView("existing");
+}
+
+async function handleExistingUserSubmit(e) {
+  e.preventDefault();
+  const usernameRaw = document.getElementById("existingUsername").value;
+  const usernameLower = normalizeUsername(usernameRaw);
+  const pass = document.getElementById("existingUserPass").value;
+  const err = document.getElementById("existingUserError");
+
+  const user = await dbGet("users", usernameLower);
+  if (!user) {
+    err.textContent = "Usuario no encontrado. Si es su primera vez, use 'Nuevo usuario'.";
+    err.classList.add("show");
+    return;
+  }
+  const hash = await sha256(pass);
+  if (hash !== user.passwordHash) {
+    err.textContent = "Usuario o contraseña incorrectos.";
+    err.classList.add("show");
+    return;
+  }
+
+  err.classList.remove("show");
+  loginSuccess(user.username);
+  document.getElementById("existingUsername").value = "";
+  document.getElementById("existingUserPass").value = "";
+}
+
+function loginSuccess(username) {
+  sessionStorage.setItem("tc_current_user", username);
   document.getElementById("loginOverlay").classList.add("hidden");
-  document.getElementById("setupPassword1").value = "";
-  document.getElementById("setupPassword2").value = "";
-  showToast("Contraseña creada correctamente ✔");
+  showCurrentUserLabel(username);
+  // Comodidad: si el campo de Inspector está vacío, se prellena con el usuario que inició sesión
+  const inspectorField = document.getElementById("woInspector");
+  if (inspectorField && !inspectorField.value.trim()) {
+    inspectorField.value = username;
+    validateInspectorField();
+  }
+}
+
+function showCurrentUserLabel(username) {
+  const label = document.getElementById("currentUserLabel");
+  label.textContent = `👤 ${username}`;
+  label.style.display = "inline-block";
 }
 
 function lockApp() {
-  sessionStorage.removeItem("tc_unlocked");
-  document.getElementById("loginTitle").textContent = "Acceso protegido";
-  document.getElementById("loginSubtitle").textContent = "Ingrese la contraseña de la aplicación para continuar.";
-  document.getElementById("formLogin").style.display = "block";
-  document.getElementById("formSetupPassword").style.display = "none";
+  sessionStorage.removeItem("tc_current_user");
+  document.getElementById("currentUserLabel").style.display = "none";
+  showLoginView("choice");
   document.getElementById("loginOverlay").classList.remove("hidden");
 }
 

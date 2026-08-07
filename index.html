@@ -16,34 +16,98 @@
 <div id="loginOverlay" class="login-overlay">
   <div class="login-box">
     <img src="icons/icon-192.png" alt="TrackCare" class="brand-icon-login">
-    <h2 id="loginTitle">Acceso protegido</h2>
-    <p class="hint" id="loginSubtitle">Ingrese la contraseña de la aplicación para continuar.</p>
+    <h2 id="loginTitle">Bienvenido a TrackCare</h2>
+    <p class="hint" id="loginSubtitle">Seleccione una opción para continuar.</p>
 
-    <!-- Formulario de inicio de sesión (contraseña ya configurada) -->
-    <form id="formLogin">
+    <!-- ---- Vista 1: Elección Nuevo usuario / Usuario dado de alta ---- -->
+    <div id="loginChoiceView">
+      <button type="button" id="btnGoNewUser" class="btn-login mt">🆕 Nuevo usuario</button>
+      <button type="button" id="btnGoExistingUser" class="btn-login mt" style="background:var(--navy);">✅ Usuario dado de alta</button>
+    </div>
+
+    <!-- ---- Vista 2: Registro de Nuevo usuario ---- -->
+    <form id="formNewUser" style="display:none;">
+      <div class="login-field">
+        <label>Nombre de usuario</label>
+        <input type="text" id="newUsername" placeholder="Ej. jarreola" autocomplete="username">
+      </div>
       <div class="login-field">
         <label>Contraseña</label>
-        <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
-        <button type="button" class="toggle-pass" data-target="loginPassword">👁️</button>
+        <input type="password" id="newUserPass1" placeholder="Mínimo 4 caracteres" autocomplete="new-password">
+        <button type="button" class="toggle-pass" data-target="newUserPass1">👁️</button>
       </div>
-      <div class="login-error" id="loginError">Contraseña incorrecta. Intente de nuevo.</div>
-      <button type="submit" class="btn-login">🔓 Entrar</button>
+      <div class="login-field">
+        <label>Repetir contraseña</label>
+        <input type="password" id="newUserPass2" placeholder="Repita la contraseña" autocomplete="new-password">
+        <button type="button" class="toggle-pass" data-target="newUserPass2">👁️</button>
+      </div>
+      <div class="login-field">
+        <label>Pregunta de seguridad (para recuperar su contraseña)</label>
+        <select id="newUserSecQuestion">
+          <option value="">Seleccione una pregunta…</option>
+          <option value="mascota">¿Cuál fue el nombre de su primera mascota?</option>
+          <option value="ciudad">¿En qué ciudad nació?</option>
+          <option value="madre">¿Cuál es el nombre de soltera de su madre?</option>
+          <option value="escuela">¿Cuál fue el nombre de su escuela primaria?</option>
+          <option value="auto">¿Cuál fue la marca de su primer auto?</option>
+        </select>
+      </div>
+      <div class="login-field">
+        <label>Respuesta de seguridad</label>
+        <input type="text" id="newUserSecAnswer" placeholder="Su respuesta (recuérdela bien)" autocomplete="off">
+      </div>
+      <div class="login-error" id="newUserError">Verifique el usuario, que las contraseñas coincidan (mín. 4 caracteres) y que haya elegido una pregunta de seguridad con respuesta.</div>
+      <button type="submit" class="btn-login">✔️ Crear cuenta y entrar</button>
+      <button type="button" class="login-back" id="btnBackFromNew">← Volver</button>
     </form>
 
-    <!-- Formulario de configuración inicial (primera vez, sin contraseña definida) -->
-    <form id="formSetupPassword" style="display:none;">
+    <!-- ---- Vista 3: Acceso de Usuario dado de alta ---- -->
+    <form id="formExistingUser" style="display:none;">
       <div class="login-field">
-        <label>Cree una contraseña de acceso</label>
-        <input type="password" id="setupPassword1" placeholder="Mínimo 4 caracteres" autocomplete="new-password">
-        <button type="button" class="toggle-pass" data-target="setupPassword1">👁️</button>
+        <label>Nombre de usuario</label>
+        <input type="text" id="existingUsername" placeholder="Ej. jarreola" autocomplete="username">
       </div>
       <div class="login-field">
-        <label>Confirme la contraseña</label>
-        <input type="password" id="setupPassword2" placeholder="Repita la contraseña" autocomplete="new-password">
-        <button type="button" class="toggle-pass" data-target="setupPassword2">👁️</button>
+        <label>Contraseña</label>
+        <input type="password" id="existingUserPass" placeholder="••••••••" autocomplete="current-password">
+        <button type="button" class="toggle-pass" data-target="existingUserPass">👁️</button>
       </div>
-      <div class="login-error" id="setupError">Las contraseñas no coinciden o son muy cortas.</div>
-      <button type="submit" class="btn-login">🔐 Crear contraseña e ingresar</button>
+      <div class="login-error" id="existingUserError">Usuario o contraseña incorrectos.</div>
+      <button type="submit" class="btn-login">🔓 Entrar</button>
+      <button type="button" class="login-back" id="btnGoForgotPassword">¿Olvidó su contraseña?</button>
+      <button type="button" class="login-back" id="btnBackFromExisting">← Volver</button>
+    </form>
+
+    <!-- ---- Vista 4: Recuperar / Restablecer contraseña (Paso 1: buscar usuario) ---- -->
+    <form id="formForgotStep1" style="display:none;">
+      <div class="login-field">
+        <label>Nombre de usuario</label>
+        <input type="text" id="forgotUsername" placeholder="Ej. jarreola" autocomplete="username">
+      </div>
+      <div class="login-error" id="forgotStep1Error">Usuario no encontrado.</div>
+      <button type="submit" class="btn-login">➡️ Continuar</button>
+      <button type="button" class="login-back" id="btnBackFromForgot1">← Volver</button>
+    </form>
+
+    <!-- ---- Vista 5: Recuperar / Restablecer contraseña (Paso 2: pregunta + nueva contraseña) ---- -->
+    <form id="formForgotStep2" style="display:none;">
+      <div class="login-field">
+        <label id="forgotQuestionLabel">Pregunta de seguridad</label>
+        <input type="text" id="forgotAnswer" placeholder="Escriba su respuesta" autocomplete="off">
+      </div>
+      <div class="login-field">
+        <label>Nueva contraseña</label>
+        <input type="password" id="forgotNewPass1" placeholder="Mínimo 4 caracteres" autocomplete="new-password">
+        <button type="button" class="toggle-pass" data-target="forgotNewPass1">👁️</button>
+      </div>
+      <div class="login-field">
+        <label>Repetir nueva contraseña</label>
+        <input type="password" id="forgotNewPass2" placeholder="Repita la nueva contraseña" autocomplete="new-password">
+        <button type="button" class="toggle-pass" data-target="forgotNewPass2">👁️</button>
+      </div>
+      <div class="login-error" id="forgotStep2Error">Respuesta incorrecta o contraseñas no válidas/no coinciden.</div>
+      <button type="submit" class="btn-login">🔑 Restablecer contraseña</button>
+      <button type="button" class="login-back" id="btnBackFromForgot2">← Volver</button>
     </form>
 
     <div class="login-footer">TrackCare — Acceso restringido al personal autorizado de mantenimiento.</div>
@@ -59,8 +123,9 @@
     </div>
   </div>
   <div style="display:flex;align-items:center;">
+    <span class="status-pill" id="currentUserLabel" style="display:none;">👤</span>
     <div class="status-pill" id="connStatus">Verificando conexión…</div>
-    <button type="button" id="btnLock" class="btn-lock">🔒 Bloquear</button>
+    <button type="button" id="btnLock" class="btn-lock">🔒 Salir</button>
   </div>
 </header>
 
