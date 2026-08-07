@@ -1,307 +1,363 @@
 <!DOCTYPE html>
 <html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
-    />
-    <title>
-      TrackCare Greenbrier GIMSA Mantenimiento| Track Maintenance System
-    </title>
-    <meta name="theme-color" content="#0d1b33" />
-    <link rel="manifest" href="manifest.json" />
-    <link rel="icon" href="icons/icon-192.png" />
-    <link rel="apple-touch-icon" href="icons/icon-192.png" />
-    <link rel="stylesheet" href="style.css" />
-  </head>
-  <body>
-    <header class="app-header">
-      <div class="brand">
-        <img src="icons/icon-192.png" alt="TrackCare" class="brand-icon" />
-        <div class="brand-text">
-          <h1>TrackCare Greenbrier GIMSA Mantenimiento</h1>
-          <span>TRACK MAINTENANCE SYSTEM- Mantenimiento</span>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>TrackCare | Track Maintenance System</title>
+<meta name="theme-color" content="#0d1b33">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===================== PANTALLA DE ACCESO (LOGIN) ===================== -->
+<div id="loginOverlay" class="login-overlay">
+  <div class="login-box">
+    <img src="icons/icon-192.png" alt="TrackCare" class="brand-icon-login">
+    <h2 id="loginTitle">Acceso protegido</h2>
+    <p class="hint" id="loginSubtitle">Ingrese la contraseña de la aplicación para continuar.</p>
+
+    <!-- Formulario de inicio de sesión (contraseña ya configurada) -->
+    <form id="formLogin">
+      <div class="login-field">
+        <label>Contraseña</label>
+        <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
+        <button type="button" class="toggle-pass" data-target="loginPassword">👁️</button>
+      </div>
+      <div class="login-error" id="loginError">Contraseña incorrecta. Intente de nuevo.</div>
+      <button type="submit" class="btn-login">🔓 Entrar</button>
+    </form>
+
+    <!-- Formulario de configuración inicial (primera vez, sin contraseña definida) -->
+    <form id="formSetupPassword" style="display:none;">
+      <div class="login-field">
+        <label>Cree una contraseña de acceso</label>
+        <input type="password" id="setupPassword1" placeholder="Mínimo 4 caracteres" autocomplete="new-password">
+        <button type="button" class="toggle-pass" data-target="setupPassword1">👁️</button>
+      </div>
+      <div class="login-field">
+        <label>Confirme la contraseña</label>
+        <input type="password" id="setupPassword2" placeholder="Repita la contraseña" autocomplete="new-password">
+        <button type="button" class="toggle-pass" data-target="setupPassword2">👁️</button>
+      </div>
+      <div class="login-error" id="setupError">Las contraseñas no coinciden o son muy cortas.</div>
+      <button type="submit" class="btn-login">🔐 Crear contraseña e ingresar</button>
+    </form>
+
+    <div class="login-footer">TrackCare — Acceso restringido al personal autorizado de mantenimiento.</div>
+  </div>
+</div>
+
+<header class="app-header">
+  <div class="brand">
+    <img src="icons/icon-192.png" alt="TrackCare" class="brand-icon">
+    <div class="brand-text">
+      <h1>TrackCare</h1>
+      <span>TRACK MAINTENANCE SYSTEM</span>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;">
+    <div class="status-pill" id="connStatus">Verificando conexión…</div>
+    <button type="button" id="btnLock" class="btn-lock">🔒 Bloquear</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button class="tab-btn active" data-tab="tab-new">📋 Nueva Inspección</button>
+  <button class="tab-btn" data-tab="tab-history">🗂️ Historial</button>
+  <button class="tab-btn" data-tab="tab-settings">⚙️ Configuración</button>
+</nav>
+
+<main>
+
+<!-- ===================== TAB: NUEVA INSPECCION (WORK ORDER) ===================== -->
+<section id="tab-new" class="tab-panel active">
+
+  <div class="wo-card">
+    <div class="wo-head">
+      <div>
+        <label>No. Orden de Trabajo</label>
+        <input type="text" id="woNumber" readonly>
+      </div>
+      <div>
+        <label>Fecha / Hora</label>
+        <input type="text" id="woDateTime" readonly>
+      </div>
+      <div>
+        <label>Inspector / Quien reporta *</label>
+        <input type="text" id="woInspector" placeholder="Nombre del inspector" required>
+        <span class="error-msg" id="errInspector">El nombre del inspector es obligatorio.</span>
+      </div>
+      <div>
+        <label>Celular de quien reporta *</label>
+        <input type="tel" id="woCelular" placeholder="Ej. 8661234567" list="celularSugerencias" required>
+        <datalist id="celularSugerencias"></datalist>
+        <span class="error-msg" id="errCelular">Ingrese un número de celular válido (10 dígitos).</span>
+      </div>
+      <div>
+        <label>Turno</label>
+        <select id="woShift">
+          <option>Turno 1</option>
+          <option>Turno 2</option>
+          <option>Turno 3</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1. INFORMACION GENERAL -->
+  <div class="section-card">
+    <h2>① Información General</h2>
+    <div class="grid-2">
+      <div>
+        <label>Ubicación (kilometraje / zona del patio) *</label>
+        <input type="text" id="fUbicacion" placeholder="Ej. Km 3+200 / Nave 08 / Patio Buyoff">
+      </div>
+      <div>
+        <label>Área / Nave</label>
+        <input type="text" id="fArea" placeholder="Ej. Nave 02">
+      </div>
+      <div>
+        <label>Tipo de herraje / componente *</label>
+        <select id="fTipoHerraje">
+          <option value="">Seleccione…</option>
+          <option>Durmiente</option>
+          <option>Balastro</option>
+          <option>Riel</option>
+          <option>Árbol de cambios chico</option>
+          <option>Árbol de cambios grande</option>
+          <option>Descarrilador</option>
+          <option>Sapo</option>
+          <option>Aguja</option>
+          <option>Cruce de vías</option>
+          <option>Señalamientos</option>
+        </select>
+      </div>
+      <div>
+        <label>Identificación del activo</label>
+        <input type="text" id="fActivoId" placeholder="Ej. Descarrilador 08">
+      </div>
+      <div>
+        <label>Coordenadas GPS</label>
+        <div class="gps-row">
+          <input type="text" id="fGPS" placeholder="Lat, Long" readonly>
+          <button type="button" id="btnGPS" class="btn-secondary">📍 Capturar</button>
         </div>
       </div>
-      <div class="status-pill" id="connStatus">Verificando conexión…</div>
-    </header>
+      <div>
+        <label>Estado general del elemento *</label>
+        <select id="fEstado">
+          <option value="">Seleccione…</option>
+          <option>Buen estado</option>
+          <option>Regular</option>
+          <option>Mal estado</option>
+          <option>Requiere cambio</option>
+        </select>
+      </div>
+    </div>
+    <div class="mt">
+      <label>Información específica (anomalías, medidas, notas técnicas)</label>
+      <textarea id="fInfoEspecifica" rows="3" placeholder="Detalle anomalías, medidas fuera de tolerancia, observaciones adicionales…"></textarea>
+    </div>
+  </div>
 
-    <nav class="tabs" id="tabs">
-      <button class="tab-btn active" data-tab="tab-new">
-        📋 Nueva Inspección
-      </button>
-      <button class="tab-btn" data-tab="tab-history">🗂️ Historial</button>
-      <button class="tab-btn" data-tab="tab-settings">⚙️ Configuración</button>
-    </nav>
+  <!-- 2. EVIDENCIA FOTOGRAFICA -->
+  <div class="section-card">
+    <h2>② Evidencia Fotográfica</h2>
+    <div class="photo-grid" id="photoGrid">
+      <!-- filled by JS: Foto 1 frontal, Foto 2 lateral, Foto 3 plano -->
+    </div>
+  </div>
 
-    <main>
-      <!-- ===================== TAB: NUEVA INSPECCION (WORK ORDER) ===================== -->
-      <section id="tab-new" class="tab-panel active">
-        <div class="wo-card">
-          <div class="wo-head">
-            <div>
-              <label>No. Orden de Trabajo</label>
-              <input type="text" id="woNumber" readonly />
-            </div>
-            <div>
-              <label>Fecha / Hora</label>
-              <input type="text" id="woDateTime" readonly />
-            </div>
-            <div>
-              <label>Inspector</label>
-              <input
-                type="text"
-                id="woInspector"
-                placeholder="Nombre del inspector"
-              />
-            </div>
-            <div>
-              <label>Turno</label>
-              <select id="woShift">
-                <option>Turno 1</option>
-                <option>Turno 2</option>
-                <option>Turno 3</option>
-              </select>
-            </div>
-          </div>
+  <!-- 3. RUTINA DE INSPECCION VISUAL Y PREDICTIVA -->
+  <div class="section-card">
+    <h2>③ Rutina de Inspección Visual y Predictiva</h2>
+    <p class="hint">Puntos críticos de revisión — considerar exigencia por equipo rodante pesado (cargas por eje elevadas).</p>
+    <div id="checklistContainer"></div>
+  </div>
+
+  <!-- 4. RESUMEN / RIESGOS / RECOMENDACIONES -->
+  <div class="section-card">
+    <h2>④ Resumen, Riesgos y Recomendaciones</h2>
+    <div class="grid-2">
+      <div>
+        <label>Resumen de la inspección</label>
+        <textarea id="fResumen" rows="3"></textarea>
+      </div>
+      <div>
+        <label>Riesgos identificados</label>
+        <textarea id="fRiesgos" rows="3"></textarea>
+      </div>
+    </div>
+    <div class="grid-3 mt">
+      <div>
+        <label>Recomendación Corto Plazo</label>
+        <textarea id="fCorto" rows="2"></textarea>
+      </div>
+      <div>
+        <label>Recomendación Mediano Plazo</label>
+        <textarea id="fMediano" rows="2"></textarea>
+      </div>
+      <div>
+        <label>Recomendación Largo Plazo</label>
+        <textarea id="fLargo" rows="2"></textarea>
+      </div>
+    </div>
+    <button type="button" id="btnAutoFill" class="btn-secondary mt">✨ Autogenerar resumen desde checklist</button>
+  </div>
+
+  <div class="actions-bar">
+    <button type="button" id="btnSaveReport" class="btn-primary">💾 Guardar reporte (local)</button>
+    <button type="button" id="btnClearForm" class="btn-ghost">🗑️ Limpiar formulario</button>
+  </div>
+
+</section>
+
+<!-- ===================== TAB: HISTORIAL ===================== -->
+<section id="tab-history" class="tab-panel">
+  <div class="section-card">
+    <div class="history-toolbar">
+      <input type="text" id="historySearch" placeholder="Buscar por ubicación, activo o inspector…">
+      <span class="sync-summary" id="syncSummary">0 pendientes de sincronizar</span>
+      <button type="button" id="btnSyncAll" class="btn-secondary">🔄 Sincronizar ahora</button>
+    </div>
+    <div id="historyList" class="history-list"></div>
+  </div>
+</section>
+
+<!-- ===================== TAB: CONFIGURACION ===================== -->
+<section id="tab-settings" class="tab-panel">
+  <div class="section-card">
+    <h2>Preferencias</h2>
+    <div class="grid-2">
+      <div>
+        <label>Nombre de inspector por defecto</label>
+        <input type="text" id="cfgInspector">
+      </div>
+      <div>
+        <label>Número de teléfono WhatsApp del supervisor (con código de país)</label>
+        <input type="text" id="cfgWhatsapp" placeholder="Ej. 528661234567">
+      </div>
+      <div>
+        <label>Correo del supervisor / equipo</label>
+        <input type="email" id="cfgEmail" placeholder="supervisor@empresa.com">
+      </div>
+      <div>
+        <label>Endpoint de sincronización (API / Power Automate)</label>
+        <input type="text" id="cfgEndpoint" placeholder="https://…">
+      </div>
+    </div>
+    <button type="button" id="btnSaveSettings" class="btn-primary mt">Guardar configuración</button>
+  </div>
+
+  <div class="section-card" id="adminPanelCard">
+    <h2>🛡️ Panel de Administrador</h2>
+    <p class="hint">Cambiar la contraseña de acceso y borrar todos los datos son acciones restringidas al rol de <b>Administrador</b>. Verifique la contraseña de administrador para desbloquear este panel.</p>
+
+    <!-- Vista: crear contraseña de administrador (si nunca se ha configurado) -->
+    <div id="adminSetupView" style="display:none;">
+      <p class="hint">Aún no se ha configurado una contraseña de administrador en este dispositivo. Cree una para continuar.</p>
+      <div class="grid-3">
+        <div>
+          <label>Nueva contraseña de administrador</label>
+          <input type="password" id="adminSetupPass1" placeholder="Mínimo 4 caracteres" autocomplete="new-password">
         </div>
-
-        <!-- 1. INFORMACION GENERAL -->
-        <div class="section-card">
-          <h2>① Información General</h2>
-          <div class="grid-2">
-            <div>
-              <label>Ubicación (kilometraje / zona del patio) *</label>
-              <input
-                type="text"
-                id="fUbicacion"
-                placeholder="Ej. Km 3+200 / Nave 08 / Patio Buyoff"
-              />
-            </div>
-            <div>
-              <label>Área / Nave</label>
-              <input type="text" id="fArea" placeholder="Ej. Nave 02" />
-            </div>
-            <div>
-              <label>Tipo de herraje / componente *</label>
-              <select id="fTipoHerraje">
-                <option value="">Seleccione…</option>
-                <option>Durmiente</option>
-                <option>Balastro</option>
-                <option>Riel</option>
-                <option>Árbol de cambios chico</option>
-                <option>Árbol de cambios grande</option>
-                <option>Descarrilador</option>
-                <option>Sapo</option>
-                <option>Aguja</option>
-                <option>Cruce de vías</option>
-                <option>Señalamientos</option>
-              </select>
-            </div>
-            <div>
-              <label>Identificación del activo</label>
-              <input
-                type="text"
-                id="fActivoId"
-                placeholder="Ej. Descarrilador 08"
-              />
-            </div>
-            <div>
-              <label>Coordenadas GPS</label>
-              <div class="gps-row">
-                <input type="text" id="fGPS" placeholder="Lat, Long" readonly />
-                <button type="button" id="btnGPS" class="btn-secondary">
-                  📍 Capturar
-                </button>
-              </div>
-            </div>
-            <div>
-              <label>Estado general del elemento *</label>
-              <select id="fEstado">
-                <option value="">Seleccione…</option>
-                <option>Buen estado</option>
-                <option>Regular</option>
-                <option>Mal estado</option>
-                <option>Requiere cambio</option>
-              </select>
-            </div>
-          </div>
-          <div class="mt">
-            <label
-              >Información específica (anomalías, medidas, notas
-              técnicas)</label
-            >
-            <textarea
-              id="fInfoEspecifica"
-              rows="3"
-              placeholder="Detalle anomalías, medidas fuera de tolerancia, observaciones adicionales…"
-            ></textarea>
-          </div>
+        <div>
+          <label>Confirmar contraseña</label>
+          <input type="password" id="adminSetupPass2" placeholder="Repita la contraseña" autocomplete="new-password">
         </div>
-
-        <!-- 2. EVIDENCIA FOTOGRAFICA -->
-        <div class="section-card">
-          <h2>② Evidencia Fotográfica</h2>
-          <div class="photo-grid" id="photoGrid">
-            <!-- filled by JS: Foto 1 frontal, Foto 2 lateral, Foto 3 plano -->
-          </div>
-        </div>
-
-        <!-- 3. RUTINA DE INSPECCION VISUAL Y PREDICTIVA -->
-        <div class="section-card">
-          <h2>③ Rutina de Inspección Visual y Predictiva</h2>
-          <p class="hint">
-            Puntos críticos de revisión — considerar exigencia por equipo
-            rodante pesado (cargas por eje elevadas).
-          </p>
-          <div id="checklistContainer"></div>
-        </div>
-
-        <!-- 4. RESUMEN / RIESGOS / RECOMENDACIONES -->
-        <div class="section-card">
-          <h2>④ Resumen, Riesgos y Recomendaciones</h2>
-          <div class="grid-2">
-            <div>
-              <label>Resumen de la inspección</label>
-              <textarea id="fResumen" rows="3"></textarea>
-            </div>
-            <div>
-              <label>Riesgos identificados</label>
-              <textarea id="fRiesgos" rows="3"></textarea>
-            </div>
-          </div>
-          <div class="grid-3 mt">
-            <div>
-              <label>Recomendación Corto Plazo</label>
-              <textarea id="fCorto" rows="2"></textarea>
-            </div>
-            <div>
-              <label>Recomendación Mediano Plazo</label>
-              <textarea id="fMediano" rows="2"></textarea>
-            </div>
-            <div>
-              <label>Recomendación Largo Plazo</label>
-              <textarea id="fLargo" rows="2"></textarea>
-            </div>
-          </div>
-          <button type="button" id="btnAutoFill" class="btn-secondary mt">
-            ✨ Autogenerar resumen desde checklist
-          </button>
-        </div>
-
-        <div class="actions-bar">
-          <button type="button" id="btnSaveReport" class="btn-primary">
-            💾 Guardar reporte (local)
-          </button>
-          <button type="button" id="btnClearForm" class="btn-ghost">
-            🗑️ Limpiar formulario
-          </button>
-        </div>
-      </section>
-
-      <!-- ===================== TAB: HISTORIAL ===================== -->
-      <section id="tab-history" class="tab-panel">
-        <div class="section-card">
-          <div class="history-toolbar">
-            <input
-              type="text"
-              id="historySearch"
-              placeholder="Buscar por ubicación, activo o inspector…"
-            />
-            <span class="sync-summary" id="syncSummary"
-              >0 pendientes de sincronizar</span
-            >
-            <button type="button" id="btnSyncAll" class="btn-secondary">
-              🔄 Sincronizar ahora
-            </button>
-          </div>
-          <div id="historyList" class="history-list"></div>
-        </div>
-      </section>
-
-      <!-- ===================== TAB: CONFIGURACION ===================== -->
-      <section id="tab-settings" class="tab-panel">
-        <div class="section-card">
-          <h2>Preferencias</h2>
-          <div class="grid-2">
-            <div>
-              <label>Nombre de inspector por defecto</label>
-              <input type="text" id="cfgInspector" />
-            </div>
-            <div>
-              <label
-                >Número de teléfono WhatsApp del supervisor (con código de
-                país)</label
-              >
-              <input
-                type="text"
-                id="cfgWhatsapp"
-                placeholder="Ej. 528661234567"
-              />
-            </div>
-            <div>
-              <label>Correo del supervisor / equipo</label>
-              <input
-                type="email"
-                id="cfgEmail"
-                placeholder="supervisor@empresa.com"
-              />
-            </div>
-            <div>
-              <label>Endpoint de sincronización (API / Power Automate)</label>
-              <input type="text" id="cfgEndpoint" placeholder="https://…" />
-            </div>
-          </div>
-          <button type="button" id="btnSaveSettings" class="btn-primary mt">
-            Guardar configuración
-          </button>
-        </div>
-
-        <div class="section-card">
-          <h2>Datos locales</h2>
-          <p class="hint">
-            Todos los reportes se guardan en este dispositivo (IndexedDB) y
-            funcionan sin conexión. Al recuperar señal, use "Sincronizar ahora".
-          </p>
-          <div class="actions-bar">
-            <button type="button" id="btnExportAll" class="btn-secondary">
-              ⬇️ Exportar respaldo (JSON)
-            </button>
-            <button type="button" id="btnImportAll" class="btn-secondary">
-              ⬆️ Importar respaldo
-            </button>
-            <input
-              type="file"
-              id="importFile"
-              accept="application/json"
-              style="display: none"
-            />
-            <button type="button" id="btnWipe" class="btn-ghost">
-              ⚠️ Borrar todos los datos
-            </button>
-          </div>
-        </div>
-
-        <div class="section-card">
-          <h2>Acerca de</h2>
-          <p>
-            TrackCare Greenbrier GIMSA Mantenimiento— Sistema de inspección de
-            vías férreas y patio de maniobras. PWA offline-first: instalable en
-            celular, tablet y computadora. Diseñado para técnicos e ingenieros
-            de mantenimiento ferroviario. Por Jaime Arreola
-          </p>
-        </div>
-      </section>
-    </main>
-
-    <!-- Detail / Photo modal -->
-    <div id="modalOverlay" class="modal-overlay hidden">
-      <div class="modal-box" id="modalBox"></div>
+      </div>
+      <span class="error-msg" id="errAdminSetup">Las contraseñas no coinciden o son muy cortas (mín. 4 caracteres).</span>
+      <button type="button" id="btnAdminSetupCreate" class="btn-secondary mt">🛡️ Crear contraseña de administrador</button>
     </div>
 
-    <div id="toast" class="toast hidden"></div>
+    <!-- Vista: panel bloqueado, requiere verificación -->
+    <div id="adminLockedView" style="display:none;">
+      <div class="grid-2">
+        <div>
+          <label>Contraseña de administrador</label>
+          <input type="password" id="adminUnlockPass" placeholder="Ingrese la contraseña de administrador" autocomplete="off">
+        </div>
+      </div>
+      <span class="error-msg" id="errAdminUnlock">Contraseña de administrador incorrecta.</span>
+      <button type="button" id="btnAdminUnlock" class="btn-secondary mt">🔓 Desbloquear panel de administrador</button>
+    </div>
 
-    <script src="app.js"></script>
-  </body>
+    <!-- Vista: panel desbloqueado -->
+    <div id="adminUnlockedView" style="display:none;">
+      <span class="badge-status badge-sync-done" style="display:inline-block;margin-bottom:12px;">✔ Modo administrador activo</span>
+
+      <h3 style="font-size:14px;color:var(--navy);margin:14px 0 8px;">Restablecer contraseña de acceso a la app</h3>
+      <p class="hint" style="margin-top:-4px;">Como administrador, puede definir una nueva contraseña de acceso sin necesidad de conocer la anterior (útil si el inspector la olvidó).</p>
+      <div class="grid-2">
+        <div>
+          <label>Nueva contraseña de acceso</label>
+          <input type="password" id="adminNewAccessPass1" placeholder="Mínimo 4 caracteres" autocomplete="new-password">
+        </div>
+        <div>
+          <label>Confirmar nueva contraseña de acceso</label>
+          <input type="password" id="adminNewAccessPass2" placeholder="Repita la contraseña" autocomplete="new-password">
+        </div>
+      </div>
+      <span class="error-msg" id="errAdminResetAccess">Verifique que ambas contraseñas coincidan (mín. 4 caracteres).</span>
+      <button type="button" id="btnAdminResetAccess" class="btn-secondary mt">🔑 Restablecer contraseña de acceso</button>
+
+      <h3 style="font-size:14px;color:var(--navy);margin:20px 0 8px;">Cambiar contraseña de administrador</h3>
+      <div class="grid-3">
+        <div>
+          <label>Contraseña actual de admin</label>
+          <input type="password" id="adminChangeCurrent" placeholder="Contraseña actual" autocomplete="current-password">
+        </div>
+        <div>
+          <label>Nueva contraseña de admin</label>
+          <input type="password" id="adminChangeNew1" placeholder="Mínimo 4 caracteres" autocomplete="new-password">
+        </div>
+        <div>
+          <label>Confirmar nueva contraseña</label>
+          <input type="password" id="adminChangeNew2" placeholder="Repita la contraseña" autocomplete="new-password">
+        </div>
+      </div>
+      <span class="error-msg" id="errAdminChange">Verifique que la contraseña actual sea correcta y que la nueva coincida (mín. 4 caracteres).</span>
+      <button type="button" id="btnAdminChangePassword" class="btn-secondary mt">🔑 Cambiar contraseña de administrador</button>
+
+      <h3 style="font-size:14px;color:var(--red);margin:20px 0 8px;">Zona de riesgo</h3>
+      <p class="hint" style="margin-top:-4px;">Esta acción elimina permanentemente todos los reportes guardados en este dispositivo.</p>
+      <button type="button" id="btnWipe" class="btn-ghost">⚠️ Borrar todos los datos</button>
+
+      <div class="mt">
+        <button type="button" id="btnAdminLock" class="btn-lock" style="color:var(--gray);border-color:#d7dce4;">🔒 Cerrar panel de administrador</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <h2>Datos locales</h2>
+    <p class="hint">Todos los reportes se guardan en este dispositivo (IndexedDB) y funcionan sin conexión. Al recuperar señal, use "Sincronizar ahora".</p>
+    <div class="actions-bar">
+      <button type="button" id="btnExportAll" class="btn-secondary">⬇️ Exportar respaldo (JSON)</button>
+      <button type="button" id="btnImportAll" class="btn-secondary">⬆️ Importar respaldo</button>
+      <input type="file" id="importFile" accept="application/json" style="display:none">
+    </div>
+    <p class="hint">🗑️ Para borrar todos los datos, use el <b>Panel de Administrador</b> arriba.</p>
+  </div>
+
+  <div class="section-card">
+    <h2>Acerca de</h2>
+    <p>TrackCare — Sistema de inspección de vías férreas y patio de maniobras. PWA offline-first: instalable en celular, tablet y computadora. Diseñado para técnicos e ingenieros de mantenimiento ferroviario.</p>
+  </div>
+</section>
+
+</main>
+
+<!-- Detail / Photo modal -->
+<div id="modalOverlay" class="modal-overlay hidden">
+  <div class="modal-box" id="modalBox"></div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
 </html>
